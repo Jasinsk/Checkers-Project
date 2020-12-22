@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Threading;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
@@ -34,6 +35,16 @@ public class Board : MonoBehaviour
     private bool runningGame;
     private bool playerIsWhite;
     private AudioSource sound;
+	
+	struct Point
+    {
+		public int x_0;
+		public int y_0;
+        public int x;
+        public int y;
+		public bool isForcedToMove;
+		public int movementQuality;
+    }
 
     private void Start()
     {
@@ -52,8 +63,8 @@ public class Board : MonoBehaviour
         if (runningGame)
         {
             //Uncomment all this to start implementing enemy movement in EnemyTurn()
-            //if (playerIsWhite == isWhiteTurn)
-            //{
+            if (playerIsWhite == isWhiteTurn)
+            {
                 MouseUpdate();
 
                 int x = (int)mousePosition.x;
@@ -74,12 +85,11 @@ public class Board : MonoBehaviour
                     endDrag = mousePosition;
                     TryMove((int)startDrag.x, (int)startDrag.y, x, y);
                 }
-            //}
-            //else
-            //{
-            //    EnemyTurn();
-            //    Debug.Log("Enemy turn");
-            //}
+            }
+            else
+            {
+				EnemyTurn();
+            }
             
 
             CheckVictory();
@@ -126,6 +136,9 @@ public class Board : MonoBehaviour
                 selectedPiece = p;
                 startDrag = mousePosition;
             }
+			else{
+			
+			}
         }
     }
 
@@ -147,7 +160,7 @@ public class Board : MonoBehaviour
 
         if (selectedPiece != null)
         {
-            if (endDrag == startDrag)
+            if (endDrag == startDrag && playerIsWhite)
             {
                 MovePiece(selectedPiece, x1, y1);
 
@@ -187,9 +200,10 @@ public class Board : MonoBehaviour
                 pieces[x1, y1] = null;
                 sound.clip = pieceMovementSound;
                 sound.Play();
+				
                 MovePiece(selectedPiece, x2, y2);
-
-                EndTurn();
+				
+                EndTurn(x2, y2);
             }
             else
             {
@@ -203,13 +217,119 @@ public class Board : MonoBehaviour
 
     private void EnemyTurn()
     {
+		
+		List<Point> possibleMoves = GetPossibleMoves();
+		var id_list = new List<int>();
+		int maxQ_ID = 0;
+		
+		int x = Random.Range(0,possibleMoves.Count);
+		
+		
+		if(possibleMoves.Count != 0){
+			int maxQ = possibleMoves[0].movementQuality;
+			for(int i = 0; i<possibleMoves.Count; i++){
+				if(possibleMoves[i].movementQuality>maxQ) {
+					maxQ=possibleMoves[i].movementQuality;
+					maxQ_ID =i;
+				}
+			}
+			for(int i = 0; i<possibleMoves.Count; i++){
+				if(possibleMoves[i].movementQuality==maxQ) id_list.Add(i);
+			}
+			maxQ_ID = id_list[Random.Range(0, id_list.Count)];
+		}			
+		
+		if(possibleMoves.Count == 0) {
+			CheckVictory();
+		}else{
+			selectedPiece = pieces[possibleMoves[maxQ_ID].x_0, possibleMoves[maxQ_ID].y_0];
+			Thread.Sleep(500);
+			TryMove(possibleMoves[maxQ_ID].x_0, possibleMoves[maxQ_ID].y_0, possibleMoves[maxQ_ID].x, possibleMoves[maxQ_ID].y);
+			selectedPiece = null;		
+		}
 
     }
-
-    private void EndTurn()
+	
+	private List<Point> GetPossibleMoves()
     {
-        int x = (int)endDrag.x;
-        int y = (int)endDrag.y;
+        List<Point> possiblePoints = new List<Point>();
+		bool forcedToMoveIn = false;
+
+		for(int x = 0; x<8; x++){
+			for(int y = 0; y<8; y++){
+				if (pieces[x,y] != null && pieces[x,y].isWhite!=playerIsWhite)
+				{
+					List<int> possibleX = new List<int> {x+2,x+1, x-1,x-2};
+					List<int> possibleY = new List<int> {y-2, y-1, y+1, y+2};
+					foreach (int xi in possibleX)
+					{
+						foreach (int yi in possibleY)
+						{
+							if(xi<0 || xi>7 || yi<0 || yi>7) continue;
+							
+							if (pieces[x, y].ValidMove(pieces, x, y, xi, yi))
+							{
+								Point p = new Point();
+								p.x = xi;
+								p.y = yi;
+								p.x_0=x;
+								p.y_0=y;
+								p.movementQuality = Scoring(x, y, xi,yi);
+								if(xi==x+2 || xi==x-2 || yi == y+2 || yi == y-2){
+									p.isForcedToMove = true;
+									forcedToMoveIn = true;
+								}else{
+									p.isForcedToMove = false;
+								}
+								 
+								//Debug.Log("x0: " + p.x_0 + "    y0: " + p.y_0 + "    x: " + xi + "   y: " + yi + " " + p.isForcedToMove + " " + p.movementQuality);
+								possiblePoints.Add(p);
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		if(forcedToMoveIn){
+			List<Point> onlyForcedToMove = new List<Point>();
+			foreach(Point p in possiblePoints){
+				if(p.isForcedToMove == true) onlyForcedToMove.Add(p);
+			}
+			return onlyForcedToMove;
+		}
+        return possiblePoints;
+    }
+	
+	private int Scoring(int x_0, int y_0, int xi, int yi){
+		int value_=0;
+		
+		for(int x = 0; x<8; x++){
+			for(int y = 0; y<8; y++){
+				if (pieces[x,y] != null && pieces[x,y].isWhite==playerIsWhite){
+					if(Mathf.Abs(xi - x)==1 && Mathf.Abs(yi - y)==1){
+						value_ +=1;
+						
+						if(
+						( (x+2)==x_0 && (y+2)==y_0) ||
+						( (x+2)==x_0 && (y-2)==y_0) ||
+						( (x-2)==x_0 && (y+2)==y_0) ||
+						( (x-2)==x_0 && (y-2)==y_0) ||
+						pieces[x,y].IsForcedToMove(pieces, xi, yi)
+						){
+							value_-=3;
+						}
+					}					
+				}
+			}
+		}
+		return value_;
+	}
+
+    private void EndTurn(int x2, int y2)
+    {
+        int x = x2;
+        int y = y2;
 
         // promote piece to king
         if (selectedPiece.isWhite && !selectedPiece.isKing && y == 7)
@@ -358,6 +478,7 @@ public class Board : MonoBehaviour
     private void MovePiece(Piece p, int x, int y)
     {
         p.transform.position = transform.position + (Vector3.right * x) + (Vector3.forward * y) + offset;
+		
     }
 
     public void StartWhite()
@@ -370,8 +491,10 @@ public class Board : MonoBehaviour
 
     public void StartBlack()
     {
+		
         playerIsWhite = false;
         runningGame = true;
+		//isWhiteTurn=false;
 
         camera.transform.position = camera.transform.position + new Vector3(0, 0, 4);
         camera.transform.Rotate(24, 0, 180);
